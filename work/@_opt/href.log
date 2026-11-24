@@ -1,0 +1,7 @@
+BEGIN 1:ResetCtrlHalf:fast:work
+    FsmIsolate :  1:tb_system:fast:work
+    EchoClear :  1:tb_system:fast:work
+END 
+BEGIN 1:ResetFSM:fast:work
+    state :  1:tb_system:fast:work
+END 

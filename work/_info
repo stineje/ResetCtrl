@@ -1,0 +1,156 @@
+m255
+K4
+z2
+!s12c _opt
+Z0 !s99 nomlopt
+!s11f vlog 2024.3_5 2026.06, Jun 11 2026
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z1 d/home/jstine/Debug/ResetCtrl
+T_opt
+!s110 1794668635
+VL@I_h80Lb71ibc7_nO[f@0
+04 9 4 work tb_system fast 0
+=1-000ae431a4f1-6af8785b-4cdca-1ba570
+R0
+!s12f OEM100
+!s12b OEM100
+!s124 OEM100
+!s135 nogc
+o-quiet -auto_acc_if_foreign -work work
+Z2 tCvgOpt 0
+n@_opt
+OE;O;2024.3_5;79
+vEcho
+Z3 2rtl/ResetCtrl.sv|tb/tb_system.sv
+Z4 DXx6 sv_std 3 std 0 22 9oUSJO;AeEaW`l:M@^WG92
+Z5 !s110 1794668629
+!i10b 1
+!s100 jd;eFKdJ6UL?d?ggG^fDF3
+IZ6k5jI75;>LSHoUL=lg_=2
+S1
+R1
+Z6 w1794635387
+Z7 8rtl/ResetCtrl.sv
+Z8 Frtl/ResetCtrl.sv
+!i122 0
+L0 118 47
+Z9 VDg1SIo80bB@j0V0VzS_@n1
+Z10 OE;L;2024.3_5;79
+r1
+!s85 0
+31
+Z11 !s108 1794668629.000000
+Z12 !s107 tb/tb_system.sv|rtl/ResetCtrl.sv|
+Z13 !s90 -sv|-timescale|1ns/1ps|rtl/ResetCtrl.sv|tb/tb_system.sv|
+!i113 0
+Z14 o-sv -timescale 1ns/1ps -L mtiAvm -L mtiRnm -L mtiOvm -L mtiUvm -L mtiUPF -L infact
+R2
+n@echo
+vResetCtrlHalf
+R3
+R4
+R5
+!i10b 1
+!s100 YFoCMHYUi]COC6X`fVg1D3
+IPj?=`Kah?eSD^e`Im4Hz60
+S1
+R1
+R6
+R7
+R8
+!i122 0
+L0 13 30
+R9
+R10
+r1
+!s85 0
+31
+R11
+R12
+R13
+!i113 0
+R14
+R2
+n@reset@ctrl@half
+vResetFSM
+R3
+R4
+R5
+!i10b 1
+!s100 AI8^W0]CO<0n_he8YMo2o3
+Ie01H^Tgf<kZCE=SOL1i9?2
+S1
+R1
+R6
+R7
+R8
+!i122 0
+L0 48 65
+R9
+R10
+r1
+!s85 0
+31
+R11
+R12
+R13
+!i113 0
+R14
+R2
+n@reset@f@s@m
+vSync2
+R3
+R4
+R5
+!i10b 1
+!s100 P2Z2lBXa6lFjcS?mikHLa0
+IjPCngN`H15J<d=>D8;dZW2
+S1
+R1
+R6
+R7
+R8
+!i122 0
+L0 171 26
+R9
+R10
+r1
+!s85 0
+31
+R11
+R12
+R13
+!i113 0
+R14
+R2
+n@sync2
+vtb_system
+R3
+R4
+R5
+!i10b 1
+!s100 C9WE4XW1PP;;Ih@[Dloze0
+I1gP;]L2`cl6@QDn6E<R4V2
+S1
+R1
+w1794635474
+8tb/tb_system.sv
+Ftb/tb_system.sv
+!i122 0
+L0 26 277
+R9
+R10
+r1
+!s85 0
+31
+R11
+R12
+R13
+!i113 0
+R14
+R2

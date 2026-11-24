@@ -1,0 +1,196 @@
+// Clock-domain-crossing reset controller, in four small modules.
+// Put one ResetCtrlHalf in each clock domain and cross-connect them:
+//
+//   A.PhaseOut -> B.PhaseIn      B.PhaseOut -> A.PhaseIn
+//   A.EchoOut  -> B.EchoIn       B.EchoOut  -> A.EchoIn
+//
+// Phase codes (Gray): IDLE 00, ISOLATE 01, CLEAR 11, POST_CLEAR 10
+
+
+// ---------------------------------------------------------------------
+// Top level: one side of the controller
+// ---------------------------------------------------------------------
+module ResetCtrlHalf (Isolate, Clear, PhaseOut, EchoOut,
+                      reset_b, clock, Start, IsoAck, ClrAck, PhaseIn, EchoIn);
+
+   output logic       Isolate, Clear;    // to the local CDC
+   output logic [1:0] PhaseOut, EchoOut; // to the other clock domain
+   input  logic	      reset_b, clock;
+   input  logic	      Start;             // request a clear sequence
+   input  logic	      IsoAck, ClrAck;    // from the local CDC
+   input  logic [1:0] PhaseIn, EchoIn;   // from the other clock domain
+
+   logic [1:0]	      PhaseSync, EchoSync;
+   logic	      FsmIsolate, FsmClear, EchoIsolate, EchoClear;
+
+   // Bring the other side's signals into this clock domain
+   Sync2 syncPhase (PhaseSync, reset_b, clock, PhaseIn);
+   Sync2 syncEcho  (EchoSync,  reset_b, clock, EchoIn);
+
+   // Our sequence: walks both sides through the four phases
+   ResetFSM fsm (PhaseOut, FsmIsolate, FsmClear,
+                 reset_b, clock, Start, EchoSync, IsoAck, ClrAck);
+
+   // The other side's sequence: follow it and echo it back
+   Echo echo (EchoOut, EchoIsolate, EchoClear,
+              reset_b, clock, PhaseSync, IsoAck, ClrAck);
+
+   // Either sequence may isolate or clear the local CDC
+   assign Isolate = FsmIsolate | EchoIsolate;
+   assign Clear   = FsmClear   | EchoClear;
+
+endmodule // ResetCtrlHalf
+
+
+// ---------------------------------------------------------------------
+// Sequence FSM: Phase = state, sent to the other side
+// ---------------------------------------------------------------------
+module ResetFSM (Phase, Isolate, Clear, reset_b, clock, Start, Echo, IsoAck, ClrAck);
+
+   output logic [1:0] Phase;
+   output logic	      Isolate, Clear;
+   input  logic	      reset_b, clock;
+   input  logic	      Start;           // request a clear sequence
+   input  logic [1:0] Echo;            // phase the other side has completed
+   input  logic	      IsoAck, ClrAck;  // local CDC acknowledges
+
+   // Gray-coded states: only one bit changes per step
+   typedef enum	      logic [1:0] {IDLE       = 2'b00,
+				   ISOLATE    = 2'b01,
+				   CLEAR      = 2'b11,
+				   POST_CLEAR = 2'b10} statetype;
+   statetype state, nextState;
+
+   // State Register (a reset starts a clear sequence)
+   always_ff @ (posedge clock, negedge reset_b)
+     begin
+	if (~reset_b)
+	  state <= ISOLATE;
+	else
+	  state <= nextState;
+     end
+
+   // The state itself is sent to the other side
+   assign Phase = state;
+
+   // Next State Logic
+   always_comb
+     begin
+	case (state)
+	  IDLE: begin
+	     if (Start && Echo == IDLE) nextState = ISOLATE;
+	     else                     nextState = IDLE;
+	     Isolate   = (Echo != IDLE);   // until the other side is done
+	     Clear     = 1'b0;
+	  end
+	  ISOLATE: begin
+	     if (Echo == ISOLATE && IsoAck) nextState = CLEAR;
+	     else                         nextState = ISOLATE;
+	     Isolate   = 1'b1;
+	     Clear     = 1'b0;
+	  end
+	  CLEAR: begin
+	     if (Echo == CLEAR && ClrAck) nextState = POST_CLEAR;
+	     else                       nextState = CLEAR;
+	     Isolate   = 1'b1;
+	     Clear     = 1'b1;
+	  end
+	  POST_CLEAR: begin
+	     if (Echo == POST_CLEAR) nextState = IDLE;
+	     else                  nextState = POST_CLEAR;
+	     Isolate   = 1'b1;
+	     Clear     = 1'b0;
+	  end
+	  default: begin
+	     nextState = IDLE;
+	     Isolate   = 1'bx;
+	     Clear     = 1'bx;
+	  end
+	endcase
+     end
+
+endmodule // ResetFSM
+
+
+// ---------------------------------------------------------------------
+// Echo: follow the other side's phase, echo it once the local CDC is done
+// ---------------------------------------------------------------------
+module Echo (EchoOut, Isolate, Clear, reset_b, clock, Phase, IsoAck, ClrAck);
+
+   output logic [1:0] EchoOut;         // sent back to the other side
+   output logic	      Isolate, Clear;
+   input  logic	      reset_b, clock;
+   input  logic [1:0] Phase;           // other side's phase (synchronized)
+   input  logic	      IsoAck, ClrAck;  // local CDC acknowledges
+
+   logic	      Done;            // local CDC has finished this phase
+
+   // Echo Register
+   always_ff @ (posedge clock, negedge reset_b)
+     begin
+	if (~reset_b)
+	  EchoOut <= 2'b00;
+	else if (Done)
+	  EchoOut <= Phase;
+     end
+
+   // Output Logic
+   always_comb
+     begin
+	case (Phase)
+	  2'b00: begin                     // IDLE
+	     Isolate = 1'b0;
+	     Clear   = 1'b0;
+	     Done    = 1'b1;
+	  end
+	  2'b01: begin                     // ISOLATE
+	     Isolate = 1'b1;
+	     Clear   = 1'b0;
+	     Done    = IsoAck;
+	  end
+	  2'b11: begin                     // CLEAR
+	     Isolate = 1'b1;
+	     Clear   = 1'b1;
+	     Done    = ClrAck;
+	  end
+	  default: begin                   // POST_CLEAR (2'b10)
+	     Isolate = 1'b1;
+	     Clear   = 1'b0;
+	     Done    = 1'b1;
+	  end
+	endcase
+     end
+
+endmodule // Echo
+
+
+// ---------------------------------------------------------------------
+// 2-bit synchronizer: two flops, then accept a value only once it has
+// been stable for two cycles (filters a mixed code after a reset)
+// ---------------------------------------------------------------------
+module Sync2 (Out, reset_b, clock, In);
+
+   output logic [1:0] Out;
+   input  logic	      reset_b, clock;
+   input  logic [1:0] In;
+
+   logic [1:0]	      s1, s2, prev;
+
+   always_ff @ (posedge clock, negedge reset_b)
+     begin
+	if (~reset_b) begin
+	   s1   <= 2'b00;
+	   s2   <= 2'b00;
+	   prev <= 2'b00;
+	   Out  <= 2'b00;
+	end
+	else begin
+	   s1   <= In;      // synchronizer flop 1
+	   s2   <= s1;      // synchronizer flop 2
+	   prev <= s2;
+	   if (s2 == prev)
+	     Out <= s2;
+	end
+     end
+
+endmodule // Sync2
