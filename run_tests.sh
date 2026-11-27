@@ -7,6 +7,13 @@
 #   SIM=questa ./run_tests.sh      use Siemens Questa (vlib/vlog/vsim on PATH)
 #   SEEDS=50 EVENTS=4000 ./run_tests.sh   more random coverage
 #
+# Questa GUI (one testbench, waves open, window stays up after $finish):
+#   ./run_tests.sh --gui                          tb_system, default test
+#   ./run_tests.sh --gui +test=reset_b            tb_system, one scenario
+#   ./run_tests.sh --gui system +test=random +seed=7 +events=500 +ha=18500 +hb=1825
+#   ./run_tests.sh --gui ResetFSM                 a unit test (ResetFSM, Echo, Sync2)
+#   MUTANT=fsm_reset_to_idle ./run_tests.sh --gui +test=reset_a   debug a planted bug
+#
 # Exit status is 0 only if every test passes (and, with --mutants, every
 # mutant is caught).
 
@@ -20,6 +27,52 @@ RTL=${RTL:-rtl/ResetCtrl.sv}
 BUILD=build
 MUTANTS=0
 [ "${1:-}" = "--mutants" ] && MUTANTS=1
+
+# name | sed expression applied to the RTL
+mutants=(
+  "fsm_isolate_ignores_echo|s/if (Echo == ISOLATE \&\& IsoAck)/if (IsoAck)/"
+  "fsm_clear_ignores_ack|s/if (Echo == CLEAR \&\& ClrAck)/if (Echo == CLEAR)/"
+  "fsm_idle_drops_isolate|s/Isolate   = (Echo != IDLE);/Isolate   = 1'b0;/"
+  "fsm_reset_to_idle|s/state <= ISOLATE;/state <= IDLE;/"
+  "fsm_start_while_busy|s/if (Start \&\& Echo == IDLE)/if (Start)/"
+  "echo_before_isolate_ack|s/Done    = IsoAck;/Done    = 1'b1;/"
+  "echo_before_clear_ack|s/Done    = ClrAck;/Done    = 1'b1;/"
+  "echo_no_clear|0,/Clear   = 1'b1;/s//Clear   = 1'b0;/"
+  "sync_no_filter|s/if (s2 == prev)/if (1'b1)/"
+  "sync_one_flop|s/s2   <= s1;/s2   <= In;/"
+  "top_ignores_echo_isolate|s/Isolate = FsmIsolate | EchoIsolate;/Isolate = FsmIsolate;/"
+  "not_gray_coded|s/CLEAR      = 2'b11,/CLEAR      = 2'b10,/;s/POST_CLEAR = 2'b10/POST_CLEAR = 2'b11/"
+)
+
+# --gui [tb] [plusargs...] : open one testbench in the Questa GUI and exit
+if [ "${1:-}" = "--gui" ]; then
+  shift
+  tb=system
+  case "${1:-}" in ""|+*) ;; *) tb=${1#tb_}; shift ;; esac
+  top=tb_$tb
+  [ -f "tb/$top.sv" ] || { echo "no tb/$top.sv (use system, ResetFSM, Echo or Sync2)"; exit 2; }
+  command -v vsim >/dev/null || { echo "--gui needs Questa: vsim is not on PATH (source your Questa setup first)"; exit 2; }
+  [ -n "${DISPLAY:-}" ] || echo "warning: DISPLAY is not set; the Questa GUI needs X (ssh -X, VNC, ...)"
+  mkdir -p "$BUILD"
+  rtl=$RTL lib=$BUILD/gui_$tb
+  if [ -n "${MUTANT:-}" ]; then
+    expr=
+    for m in "${mutants[@]}"; do [ "${m%%|*}" = "$MUTANT" ] && expr=${m#*|}; done
+    if [ -z "$expr" ]; then
+      echo "unknown MUTANT=$MUTANT; choose one of:"; for m in "${mutants[@]}"; do echo "  ${m%%|*}"; done; exit 2
+    fi
+    rtl=$BUILD/gui_$MUTANT.sv lib=$BUILD/gui_${tb}_$MUTANT
+    sed "$expr" "$RTL" > "$rtl"
+    cmp -s "$rtl" "$RTL" && { echo "MUTANT=$MUTANT did not apply (update the sed pattern)"; exit 2; }
+    echo "== GUI: $top on mutant $MUTANT ($rtl)"
+  else
+    echo "== GUI: $top on $RTL"
+  fi
+  rm -rf "$lib"
+  vlib "$lib" && vlog -sv -timescale 1ns/1ps -work "$lib" "$rtl" "tb/$top.sv" || exit 1
+  exec vsim -lib "$lib" "$top" -voptargs=+acc -onfinish stop \
+       -do "log -r /*; add wave -r /$top/*; run -all; wave zoom full" "$@"
+fi
 
 if [ "$SIM" = questa ] && ! command -v vsim >/dev/null; then
   echo "SIM=questa but vsim is not on PATH (source your Questa setup first)"; exit 2
@@ -101,21 +154,6 @@ main_fails=$?
 mut_missed=0
 if [ $MUTANTS = 1 ]; then
   echo "== Mutation tests (each planted bug must make some test fail)"
-  # name | sed expression applied to the RTL
-  mutants=(
-    "fsm_isolate_ignores_echo|s/if (Echo == ISOLATE \&\& IsoAck)/if (IsoAck)/"
-    "fsm_clear_ignores_ack|s/if (Echo == CLEAR \&\& ClrAck)/if (Echo == CLEAR)/"
-    "fsm_idle_drops_isolate|s/Isolate   = (Echo != IDLE);/Isolate   = 1'b0;/"
-    "fsm_reset_to_idle|s/state <= ISOLATE;/state <= IDLE;/"
-    "fsm_start_while_busy|s/if (Start \&\& Echo == IDLE)/if (Start)/"
-    "echo_before_isolate_ack|s/Done    = IsoAck;/Done    = 1'b1;/"
-    "echo_before_clear_ack|s/Done    = ClrAck;/Done    = 1'b1;/"
-    "echo_no_clear|0,/Clear   = 1'b1;/s//Clear   = 1'b0;/"
-    "sync_no_filter|s/if (s2 == prev)/if (1'b1)/"
-    "sync_one_flop|s/s2   <= s1;/s2   <= In;/"
-    "top_ignores_echo_isolate|s/Isolate = FsmIsolate | EchoIsolate;/Isolate = FsmIsolate;/"
-    "not_gray_coded|s/CLEAR      = 2'b11,/CLEAR      = 2'b10,/;s/POST_CLEAR = 2'b10/POST_CLEAR = 2'b11/"
-  )
   mkdir -p "$BUILD/mutants"
   for m in "${mutants[@]}"; do
     name=${m%%|*}; expr=${m#*|}
